@@ -35,7 +35,7 @@ palette2 <- c("#981FAC","#FF006A")
 
 
 # Read and process burglaries data
-Recidivism_dataset <- 
+Recidivism <- 
   read.socrata("https://data.ojp.usdoj.gov/Courts/NIJ-s-Recidivism-Challenge-Full-Dataset/ynf5-u8nk/") %>% 
   na.omit()  # Remove rows with missing values
 
@@ -44,32 +44,45 @@ Recidivism_dataset <-
 
 # Data Exploration
 
-Use the `glimpse` command to check out your data set.
+## Discussion:
 
-Make some plots of our variables - both continuous and categorical. Examine these plots and then jot down your observations to discussion prompt 1.
+**The trade-off between sensitivity and specificity**
 
-## Discussion 1:
+Sensitivity (also known as the true positive rate or recall) refers to the model's ability to correctly identify repeat offenders. Specificity (also known as the true negative rate) refers to the model's ability to correctly identify non-repeat offenders. In the criminal justice system, prioritizing sensitivity means we are more likely to identify potential repeat offenders, but this can also lead to more false positives (i.e., incorrectly labeling someone as likely to reoffend). Prioritizing specificity, on the other hand, reduces the number of false positives but increases the risk of false negatives (i.e., failing to identify someone who will actually reoffend).
 
-**What are some of the average characteristics of people who click on this ad?**
+**The costs and consequences of prioritizing sensitivity**
 
-**What are some of the ways in which clickers and non-clickers are different?**
+This could lead to more people being unfairly monitored or retained in prison, not only affecting individual freedom but also increasing social and economic costs, especially for lower socioeconomic and marginalized groups.
+
+**The costs and consequences of prioritizing specificity**
+
+This could lead to more individuals with a risk of reoffending being released, increasing the risk of societal recidivism, but it also reduces unfair treatment of individuals and social costs.
+
+```{r add_feature}
+Recidivism <- Recidivism %>%
+  mutate(Recidivism_numeric = ifelse(recidivism_within_3years == "true", 1, 0))
+glimpse(Recidivism)
+```
+
+
+
 
 ```{r exploratory_continuous}
-advertising %>%
-  dplyr::select(click,Area_Income, Time_On_FB, Daily_Internet_Usage, Age) %>%
-  gather(Variable, value, -click) %>%
-    ggplot(aes(click, value, fill=click)) + 
+Recidivism %>%
+  dplyr::select(recidivism_within_3years, jobs_per_year, percent_days_employed, supervision_risk_score_first, avg_days_per_drugtest,drugtests_thc_positive,drugtests_cocaine_positive,drugtests_meth_positive,drugtests_other_positive) %>%
+  gather(Variable, value, -recidivism_within_3years) %>%
+    ggplot(aes(recidivism_within_3years, value, fill=recidivism_within_3years)) + 
       geom_bar(position = "dodge", stat = "summary", fun = "mean") + 
       facet_wrap(~Variable, scales = "free") +
       scale_fill_manual(values = palette2) +
-      labs(x="Click", y="Value", 
-           title = "Feature associations with the likelihood of click",
+      labs(x="recidivism_within_3years", y="Value", 
+           title = "Feature associations with the likelihood of recidivism within 3 years",
            subtitle = "(continous outcomes)") +
       theme(legend.position = "none")
 ```
 
 ```{r exploratory_continuous_density, message = FALSE, warning = FALSE}
-advertising %>%
+Recidivism %>%
     dplyr::select(click,Area_Income, Time_On_FB, Daily_Internet_Usage, Age) %>%
     gather(Variable, value, -click) %>%
     ggplot() + 
@@ -80,91 +93,51 @@ advertising %>%
          subtitle = "(continous outcomes)")
 ```
 
+
 ```{r exploratory_binary, message = FALSE, warning = FALSE}
-advertising %>%
-    dplyr::select(click, Male, Fashion_FB_Group) %>%
-    gather(Variable, value, -click) %>%
-    count(Variable, value, click) %>%
-      ggplot(., aes(value, n, fill = click)) +   
+Recidivism %>%
+    dplyr::select(recidivism_within_3years, gender,race, age_at_release, education_level, education_level, dependents, prison_offense) %>%
+    gather(Variable, value, -recidivism_within_3years) %>%
+    count(Variable, value, recidivism_within_3years) %>%
+      ggplot(., aes(value, n, fill = recidivism_within_3years)) +   
         geom_bar(position = "dodge", stat="identity") +
         facet_wrap(~Variable, scales="free") +
         scale_fill_manual(values = palette2) +
-        labs(x="Click", y="Value",
-             title = "Feature associations with the likelihood of click",
+        labs(x="recidivism_within_3years", y="Value",
+             title = "Feature associations with the likelihood of recidivism within 3 years",
              subtitle = "Categorical features") +
         theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
-# Variable Transformations
-
-We have tons of countries in our data set. Most have only a handful of observations. I create a "click average" for each country to use a continuous instead of categorical variable.
-
-I also create a `userTimeFrame` variable to see if the time of day the user is viewing the ad has some kind of effect.
-
-```{r country_variables, cache = TRUE}
-
-advertising <- 
-  advertising %>% 
-  group_by(Country) %>% 
-  summarize(totClicks = sum(clickNumeric), 
-            n = n(), 
-            nationalClickAvg = 100*(totClicks/n)) %>%
-  dplyr::select(-n, -totClicks) %>%
-  right_join(advertising, .) %>%
-  mutate(Timestamp = mdy_hm(Timestamp),
-         userTimeFrame = case_when(hour(Timestamp) < 6  ~ "NIGHT",
-                                   hour(Timestamp) >= 6 & hour(Timestamp) <= 10  ~ "AM",
-                                   hour(Timestamp) >= 10 & hour(Timestamp) < 17  ~ "WORKDAY",
-                                   hour(Timestamp) >= 17  ~ "EVENING"))
-
-```
-
 # Create A Logistic Regression Model
 
-A logistic regression model predicts a binary outcome - a `1` or a `0` - a `Click` or a `No Click` and associates a coefficient that describes the change in the probability of the outcome given some change in the independent variable. As I mentioned earlier, for a more detailed discussion of logistic regression, consult the text book.
-
-We partition our data into a 50/50 training and test set (`p = 0.50`). We call these sets `advertisingTrain` and `advertisingTest`.
 
 ```{r create_partition}
 set.seed(3456)
-trainIndex <- createDataPartition(advertising$click, p = .50,
+trainIndex <- createDataPartition(Recidivism$recidivism_within_3years, p = .50,
                                   list = FALSE,
                                   times = 1)
-advertisingTrain <- advertising[ trainIndex,]
-advertisingTest  <- advertising[-trainIndex,]
+RecidivismTrain <- Recidivism[ trainIndex,]
+RecidivismTest  <- Recidivism[-trainIndex,]
 
 ```
 
-We run our model with the dependent variable `clickNumeric` and we use most of our variables in the regression. (See `dplyr::select`).
 
 ```{r run_model}
 
-advertisingModel <- glm(clickNumeric ~ .,
-                  data=advertisingTrain %>% 
-                    dplyr::select(-Country, -Timestamp, -userTimeFrame, -click),
+RecidivismModel <- glm(Recidivism_numeric ~ .,
+                  data=RecidivismTrain %>% 
+                    dplyr::select(Recidivism_numeric,jobs_per_year, percent_days_employed, supervision_risk_score_first, avg_days_per_drugtest,drugtests_thc_positive,drugtests_cocaine_positive,drugtests_meth_positive,drugtests_other_positive,gender,race, age_at_release, education_level, residence_puma,education_level, dependents, prison_offense),
+   
                   family="binomial" (link="logit"))
 
-summary(advertisingModel)
-
-```
-
-## Discussion 3
-
-Observe the output of the first model, and **using the code chunk below play around with the variables you decide to include and exclude. Run the model, and then the subsequent line of code which produces goodness of fit metrics.** How is your McFadden R-squared? It's kind of a pseudo-R-squared, not quite interpretable like R-squared for `lm` models. But the closer to 1, generally the better.
-
-```{r second_model}
-advertisingModel <- glm(clickNumeric ~ .,
-                  data=advertisingTrain %>% dplyr::select(-Country, -Timestamp, -click, -userTimeFrame,
-                                                          -Fashion_FB_Group),
-                  family="binomial" (link="logit"))
-
-summary(advertisingModel)
+summary(RecidivismModel)
 
 ```
 
 ```{r fit_metrics}
 
-pR2(advertisingModel)
+pR2(RecidivismModel)
 
 ```
 
@@ -178,8 +151,8 @@ Run the code below and explore using `glimpse(testProbs)` to see what these pred
 
 ```{r testProbs}
 
-testProbs <- data.frame(Outcome = as.factor(advertisingTest$clickNumeric),
-                        Probs = predict(advertisingModel, advertisingTest, type= "response"))
+testProbs <- data.frame(Outcome = as.factor(RecidivismTest$Recidivism_numeric),
+                        Probs = predict(RecidivismModel, RecidivismTest, type= "response"))
 ```
 
 ## Discussion 3
@@ -259,7 +232,7 @@ Probably pretty, pretty good.
 ctrl <- trainControl(method = "cv", number = 100, classProbs=TRUE, summaryFunction=twoClassSummary)
 
 cvFit <- train(click ~ .,
-                  data=advertising %>% 
+                  data=Recidivism %>% 
                     dplyr::select(-Country, -Timestamp, -clickNumeric, 
                                   -userTimeFrame, -Fashion_FB_Group), 
                 method="glm", family="binomial",
@@ -379,18 +352,3 @@ whichThreshold %>%
 
 ```
 
-## Post-Script - Interpreting Logit Coefficients
-
-**Explaining the values of the coefficients:**
-
-The coefficients in the model are "log odds" of the outcome happening. Use the `exp()` function to exponentiate a coefficient and produce an 'odds ratio' relative to a value of 1.
-
-Examples:
-
-A fixed effect coefficient which exponentiates to a value of, say `0.25` would be explained as follows:
-
-"All else equal, a person having 'characteristic X' reduces the likelihood of clicking by 75%."
-
-For continuous variables the coefficients are interpreted as having a unit increase in the independent variable increase the likelihood of clicking by some percentage.
-
-For more on the coefficients associated with logistic regression, [read here](%22https://rpubs.com/OmaymaS/182726%22).
