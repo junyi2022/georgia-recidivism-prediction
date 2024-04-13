@@ -67,34 +67,37 @@ glimpse(Recidivism)
 
 
 
-```{r exploratory_continuous}
+```{r exploratory_continuous, fig.width=10}
 Recidivism %>%
-  dplyr::select(recidivism_within_3years, jobs_per_year, percent_days_employed, supervision_risk_score_first, avg_days_per_drugtest,drugtests_thc_positive,drugtests_cocaine_positive,drugtests_meth_positive,drugtests_other_positive) %>%
+  dplyr::select(recidivism_within_3years, jobs_per_year, percent_days_employed, supervision_risk_score_first, avg_days_per_drugtest, drugtests_thc_positive, drugtests_cocaine_positive, drugtests_meth_positive, drugtests_other_positive) %>%
   gather(Variable, value, -recidivism_within_3years) %>%
     ggplot(aes(recidivism_within_3years, value, fill=recidivism_within_3years)) + 
       geom_bar(position = "dodge", stat = "summary", fun = "mean") + 
-      facet_wrap(~Variable, scales = "free") +
+      facet_wrap(~Variable, scales = "free", ncol = 4) +
       scale_fill_manual(values = palette2) +
       labs(x="recidivism_within_3years", y="Value", 
            title = "Feature associations with the likelihood of recidivism within 3 years",
            subtitle = "(continous outcomes)") +
-      theme(legend.position = "none")
+      theme_minimal() + theme(legend.position = "none")
 ```
 
-```{r exploratory_continuous_density, message = FALSE, warning = FALSE}
+```{r exploratory_continuous_density, fig.width=10, message=FALSE, warning=FALSE}
 Recidivism %>%
-    dplyr::select(click,Area_Income, Time_On_FB, Daily_Internet_Usage, Age) %>%
-    gather(Variable, value, -click) %>%
+    dplyr::select(recidivism_within_3years, jobs_per_year, percent_days_employed, supervision_risk_score_first, avg_days_per_drugtest, drugtests_thc_positive, drugtests_cocaine_positive, drugtests_meth_positive, drugtests_other_positive) %>%
+    gather(Variable, value, -recidivism_within_3years) %>%
     ggplot() + 
-    geom_density(aes(value, color=click), fill = "transparent") + 
-    facet_wrap(~Variable, scales = "free") +
-    scale_fill_manual(values = palette2) +
-    labs(title = "Feature distributions click vs. no click",
-         subtitle = "(continous outcomes)")
+    geom_density(aes(value, color=recidivism_within_3years), fill = "transparent") + 
+    facet_wrap(~Variable, scales = "free", ncol = 4) +
+    scale_colour_manual(values = palette2) +
+    labs(x="Value", y="Density",
+         title = "Feature Distribution with the likelihood of recidivism within 3 years",
+         subtitle = "(continous outcomes)") +
+      theme_minimal() + theme(legend.position = "none")
+
 ```
 
 
-```{r exploratory_binary, message = FALSE, warning = FALSE}
+```{r exploratory_binary, fig.width=10, message=FALSE, warning=FALSE}
 Recidivism %>%
     dplyr::select(recidivism_within_3years, gender,race, age_at_release, education_level, education_level, dependents, prison_offense) %>%
     gather(Variable, value, -recidivism_within_3years) %>%
@@ -106,7 +109,8 @@ Recidivism %>%
         labs(x="recidivism_within_3years", y="Value",
              title = "Feature associations with the likelihood of recidivism within 3 years",
              subtitle = "Categorical features") +
-        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      theme_minimal() + theme(legend.position = "none")
 ```
 
 # Create A Logistic Regression Model
@@ -131,8 +135,22 @@ RecidivismModel <- glm(Recidivism_numeric ~ .,
    
                   family="binomial" (link="logit"))
 
-summary(RecidivismModel)
+Recidivism_sum <- summary(RecidivismModel)
 
+coefficients_table <- as.data.frame(Recidivism_sum$coefficients)
+
+coefficients_table$significance <- ifelse(coefficients_table$`Pr(>|z|)` < 0.001, '***',
+                                         ifelse(coefficients_table$`Pr(>|z|)` < 0.01, '**',
+                                                ifelse(coefficients_table$`Pr(>|z|)` < 0.05, '*',
+                                                       ifelse(coefficients_table$`Pr(>|z|)` < 0.1, '.', ''))))
+
+coefficients_table$p_value <- paste0(round(coefficients_table$`Pr(>|z|)`, digits = 3), coefficients_table$significance)
+
+coefficients_table %>%
+  select(-significance, -`Pr(>|z|)`) %>% 
+  kable(align = "r") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))  %>%
+  footnote(general_title = "\n", general = "Table x")
 ```
 
 ```{r fit_metrics}
@@ -167,7 +185,8 @@ ggplot(testProbs, aes(x = Probs, fill = as.factor(Outcome))) +
   labs(x = "Click", y = "Density of probabilities",
        title = "Distribution of predicted probabilities by observed outcome") +
   theme(strip.text.x = element_text(size = 18),
-        legend.position = "none")
+        legend.position = "none") +
+      theme_minimal() + theme(legend.position = "none")
 ```
 
 # Confusion Matrix
@@ -183,10 +202,15 @@ testProbs <-
 ```
 
 ```{r confusion_matrix}
-caret::confusionMatrix(testProbs$predOutcome, testProbs$Outcome, 
+cm <- caret::confusionMatrix(testProbs$predOutcome, testProbs$Outcome, 
                        positive = "1")
 
+mosaicplot(cm$table, color=c("red","blue"), main = "Mosaic Plot for Original Confusion Matrix",
+           xlab = "Prediction", ylab = "Reference")
+
+
 ```
+
 
 ## Discussion 4
 
@@ -213,7 +237,8 @@ ggplot(testProbs, aes(d = as.numeric(Outcome), m = Probs)) +
   geom_roc(n.cuts = 50, labels = FALSE, colour = "#FE9900") +
   style_roc(theme = theme_grey) +
   geom_abline(slope = 1, intercept = 0, size = 1.5, color = 'grey') +
-  labs(title = "ROC Curve - clickModel")
+  labs(title = "ROC Curve - clickModel") +
+      theme_minimal() + theme(legend.position = "none")
 ```
 
 ## Discussion 5
@@ -231,10 +256,9 @@ Probably pretty, pretty good.
 ```{r cv}
 ctrl <- trainControl(method = "cv", number = 100, classProbs=TRUE, summaryFunction=twoClassSummary)
 
-cvFit <- train(click ~ .,
+cvFit <- train(recidivism_within_3years ~ .,
                   data=Recidivism %>% 
-                    dplyr::select(-Country, -Timestamp, -clickNumeric, 
-                                  -userTimeFrame, -Fashion_FB_Group), 
+                    dplyr::select(recidivism_within_3years, drugtests_thc_positive, drugtests_meth_positive, drugtests_other_positive, gender, race, education_level, residence_puma,education_level), 
                 method="glm", family="binomial",
                 metric="ROC", trControl = ctrl)
 
@@ -251,7 +275,8 @@ dplyr::select(cvFit$resample, -Resample) %>%
     geom_vline(aes(xintercept = mean), colour = "#981FAC", linetype = 3, size = 1.5) +
     scale_x_continuous(limits = c(0, 1)) +
     labs(x="Goodness of Fit", y="Count", title="CV Goodness of Fit Metrics",
-         subtitle = "Across-fold mean reprented as dotted lines")
+         subtitle = "Across-fold mean reprented as dotted lines") +
+      theme_minimal() + theme(legend.position = "none")
 
 ```
 
@@ -273,6 +298,13 @@ A clue to figuring this out - we only spend money for impressions on True Positi
 
 **Are there particular types of error which are more damaging? What outcomes do we want to maximize or minimize? Why do we look at False Negatives as a negative cost?**
 
+
+
+States spent an average of $45771 per prisoner for the year.
+https://usafacts.org/articles/how-much-do-states-spend-on-prisons/
+
+https://csgjusticecenter.org/publications/the-cost-of-recidivism/
+8000000000/193000 = 41450.78
 ```{r cost_benefit}
 cost_benefit_table <-
    testProbs %>%
@@ -284,14 +316,14 @@ cost_benefit_table <-
        gather(Variable, Count) %>%
        mutate(Revenue =
                ifelse(Variable == "True_Negative", Count * 0,
-               ifelse(Variable == "True_Positive",((.35 - .1) * Count),
-               ifelse(Variable == "False_Negative", (-0.35) * Count,
-               ifelse(Variable == "False_Positive", (-0.1) * Count, 0))))) %>%
+               ifelse(Variable == "True_Positive",((45771) * Count),
+               ifelse(Variable == "False_Negative", (41450.78) * Count,
+               ifelse(Variable == "False_Positive", (-45771) * Count, 0))))) %>%
     bind_cols(data.frame(Description = c(
-              "We correctly predicted no click",
-              "We correctly predicted a click",
-              "We predicted no click and customer clicked",
-              "We predicted a click and customer did not click")))
+              "We correctly predicted no recidivism",
+              "We correctly predicted recidivism",
+              "We predicted no recidivism but get recidivism",
+              "We predicted recidivism but get no recidivism")))
 
 kable(cost_benefit_table,
        caption = "Cost/Benefit Table") %>% kable_styling()
@@ -348,7 +380,10 @@ whichThreshold %>%
   geom_line(aes(x = Threshold, y = Revenue))+
   geom_vline(xintercept =  pull(arrange(whichThreshold_revenue, -Revenue)[1,1]))+
     labs(title = "Model Revenues By Threshold For Test Sample",
-         subtitle = "Vertical Line Denotes Optimal Threshold")
+         subtitle = "Vertical Line Denotes Optimal Threshold") +
+      theme_minimal()
 
 ```
+
+
 
