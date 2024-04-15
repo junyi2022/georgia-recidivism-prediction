@@ -1,0 +1,392 @@
+---
+title: "Georgia Recidivism Prediction"
+author: "Junyi Yang, Ziyi Guo, Jiewen Hu"
+date: "Apirl, 2024"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+
+```{r load_packages, warning = FALSE}
+options(scipen=10000000)
+
+library(tidyverse)
+library(kableExtra)
+library(caret)
+library(knitr) 
+library(pscl)
+library(plotROC)
+library(pROC)
+library(lubridate)
+library(RSocrata)
+```
+
+```{r load_data, cache = TRUE}
+palette5 <- c("#981FAC","#CB0F8B","#FF006A","#FE4C35","#FE9900")
+palette4 <- c("#981FAC","#FF006A","#FE4C35","#FE9900")
+palette2 <- c("#981FAC","#FF006A")
+
+
+# Read and process burglaries data
+Recidivism <- 
+  read.socrata("https://data.ojp.usdoj.gov/Courts/NIJ-s-Recidivism-Challenge-Full-Dataset/ynf5-u8nk/") %>% 
+  na.omit()  # Remove rows with missing values
+
+
+```
+
+# Data Exploration
+
+## Discussion:
+
+**The trade-off between sensitivity and specificity**
+
+Sensitivity (also known as the true positive rate or recall) refers to the model's ability to correctly identify repeat offenders. Specificity (also known as the true negative rate) refers to the model's ability to correctly identify non-repeat offenders. In the criminal justice system, prioritizing sensitivity means we are more likely to identify potential repeat offenders, but this can also lead to more false positives (i.e., incorrectly labeling someone as likely to reoffend). Prioritizing specificity, on the other hand, reduces the number of false positives but increases the risk of false negatives (i.e., failing to identify someone who will actually reoffend).
+
+**The costs and consequences of prioritizing sensitivity**
+
+This could lead to more people being unfairly monitored or retained in prison, not only affecting individual freedom but also increasing social and economic costs, especially for lower socioeconomic and marginalized groups.
+
+**The costs and consequences of prioritizing specificity**
+
+This could lead to more individuals with a risk of reoffending being released, increasing the risk of societal recidivism, but it also reduces unfair treatment of individuals and social costs.
+
+```{r add_feature}
+# filter the crime data under 3 years
+
+Recidivism <- Recidivism %>%
+  mutate(Recidivism_numeric = ifelse(recidivism_within_3years == "true", 1, 0))
+glimpse(Recidivism)
+```
+
+
+
+
+```{r exploratory_continuous, fig.width=10}
+
+Recidivism %>%
+  dplyr::select(recidivism_within_3years, jobs_per_year, percent_days_employed, supervision_risk_score_first, avg_days_per_drugtest, drugtests_thc_positive, drugtests_cocaine_positive, drugtests_meth_positive, drugtests_other_positive) %>%
+  gather(Variable, value, -recidivism_within_3years) %>%
+    ggplot(aes(recidivism_within_3years, value, fill=recidivism_within_3years)) + 
+      geom_bar(position = "dodge", stat = "summary", fun = "mean") + 
+      facet_wrap(~Variable, scales = "free", ncol = 4) +
+      scale_fill_manual(values = palette2) +
+      labs(x="recidivism_within_3years", y="Value", 
+           title = "Feature associations with the likelihood of recidivism within 3 years",
+           subtitle = "(continous outcomes)") +
+      theme_minimal() + theme(legend.position = "none")
+```
+
+```{r exploratory_continuous_density, fig.width=10, message=FALSE, warning=FALSE}
+
+Recidivism %>%
+    dplyr::select(recidivism_within_3years, jobs_per_year, percent_days_employed, supervision_risk_score_first, avg_days_per_drugtest, drugtests_thc_positive, drugtests_cocaine_positive, drugtests_meth_positive, drugtests_other_positive) %>%
+    gather(Variable, value, -recidivism_within_3years) %>%
+    ggplot() + 
+    geom_density(aes(value, color=recidivism_within_3years), fill = "transparent") + 
+    facet_wrap(~Variable, scales = "free", ncol = 4) +
+    scale_colour_manual(values = palette2) +
+    labs(x="Value", y="Density",
+         title = "Feature Distribution with the likelihood of recidivism within 3 years",
+         subtitle = "(continous outcomes)") +
+      theme_minimal() + theme(legend.position = "none")
+
+```
+
+
+```{r exploratory_binary, fig.width=10, message=FALSE, warning=FALSE}
+Recidivism %>%
+    dplyr::select(recidivism_within_3years, gender,race, age_at_release, education_level, education_level, dependents, prison_offense) %>%
+    gather(Variable, value, -recidivism_within_3years) %>%
+    count(Variable, value, recidivism_within_3years) %>%
+      ggplot(., aes(value, n, fill = recidivism_within_3years)) +   
+        geom_bar(position = "dodge", stat="identity") +
+        facet_wrap(~Variable, scales="free") +
+        scale_fill_manual(values = palette2) +
+        labs(x="recidivism_within_3years", y="Value",
+             title = "Feature associations with the likelihood of recidivism within 3 years",
+             subtitle = "Categorical features") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      theme_minimal() + theme(legend.position = "none")
+```
+
+# Create A Logistic Regression Model
+
+
+```{r create_partition}
+set.seed(3456)
+trainIndex <- createDataPartition(Recidivism$recidivism_within_3years, p = .50,
+                                  list = FALSE,
+                                  times = 1)
+RecidivismTrain <- Recidivism[ trainIndex,]
+RecidivismTest  <- Recidivism[-trainIndex,]
+
+```
+
+
+```{r run_model}
+
+RecidivismModel <- glm(Recidivism_numeric ~ .,
+                  data=RecidivismTrain %>% 
+                    dplyr::select(Recidivism_numeric,jobs_per_year,percent_days_employed, supervision_risk_score_first, prison_years, gang_affiliated, prior_arrest_episodes_felony, prior_arrest_episodes_misd,prior_arrest_episodes_violent, prior_arrest_episodes_property, prior_arrest_episodes_drug, avg_days_per_drugtest,drugtests_thc_positive,drugtests_cocaine_positive,drugtests_meth_positive,drugtests_other_positive,gender,race, age_at_release, residence_puma,education_level, dependents, prison_offense),
+                  family="binomial" (link="logit"))
+
+Recidivism_sum <- summary(RecidivismModel)
+
+coefficients_table <- as.data.frame(Recidivism_sum$coefficients)
+
+coefficients_table$significance <- ifelse(coefficients_table$`Pr(>|z|)` < 0.001, '***',
+                                         ifelse(coefficients_table$`Pr(>|z|)` < 0.01, '**',
+                                                ifelse(coefficients_table$`Pr(>|z|)` < 0.05, '*',
+                                                       ifelse(coefficients_table$`Pr(>|z|)` < 0.1, '.', ''))))
+
+coefficients_table$p_value <- paste0(round(coefficients_table$`Pr(>|z|)`, digits = 3), coefficients_table$significance)
+
+coefficients_table %>%
+  select(-significance, -`Pr(>|z|)`) %>% 
+  kable(align = "r") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))  %>%
+  footnote(general_title = "\n", general = "Table x")
+```
+
+```{r fit_metrics}
+
+pR2(RecidivismModel)
+
+```
+
+# Make Predictions
+
+We create a dataframe of predictions for the 500 observations in our test set, called `testProbs`.
+
+These predictions are the estimated probabilities of clicking for these out-of-sample subjects. We can compare them to the observed outcome.
+
+Run the code below and explore using `glimpse(testProbs)` to see what these predictions look like.
+
+```{r testProbs}
+
+testProbs <- data.frame(Outcome = as.factor(RecidivismTest$Recidivism_numeric),
+                        Probs = predict(RecidivismModel, RecidivismTest, type= "response"))
+```
+
+## Discussion 3
+
+Look at the plot of our predicted probabilities for our observed clickers (`1`) and non-clickers (`0`). **Write a sentence or two about how you think our model is performing.**
+
+```{r plot_testProbs}
+ggplot(testProbs, aes(x = Probs, fill = as.factor(Outcome))) + 
+  geom_density() +
+  facet_grid(Outcome ~ .) +
+  scale_fill_manual(values = palette2) +
+  labs(x = "Click", y = "Density of probabilities",
+       title = "Distribution of predicted probabilities by observed outcome") +
+  theme(strip.text.x = element_text(size = 18),
+        legend.position = "none") +
+      theme_minimal() + theme(legend.position = "none")
+```
+
+# Confusion Matrix
+
+Each threshold (e.g. a probability above which a prediction is a "click" and below which it's a "no click") has it's own rate of error. These errors can be classified in four ways for a binary model.
+
+A "confusion matrix" for the threshold of 50% shows us the rate at which we got True Positives (aka Sensitivity), False Positives, True Negatives (aka Specificity) and False Negatives for that threshold.
+
+```{r thresholds}
+testProbs <- 
+  testProbs %>%
+  mutate(predOutcome  = as.factor(ifelse(testProbs$Probs > 0.5 , 1, 0)))
+```
+
+```{r confusion_matrix}
+cm <- caret::confusionMatrix(testProbs$predOutcome, testProbs$Outcome, 
+                       positive = "1")
+
+mosaicplot(cm$table, color=c("red","blue"), main = "Mosaic Plot for Original Confusion Matrix",
+           xlab = "Prediction", ylab = "Reference")
+
+
+```
+
+
+## Discussion 4
+
+**Describe what each of the following mean in the context of our advertising use case:**
+
+**True Positive:** We predicted a click and it was a click IRL
+
+**False Positive:**
+
+**True Negative:**
+
+**False Negative:**
+
+# ROC Curve
+
+The ROC curve, gives us another visual "goodness of fit" metric. One that is a bit more tricky. You want to have a curve that is "above" the y=x line, which is where your prediction rates for positives and negatives are "no better than a coin flip". If it's too "square" - you are probably over fit. The Area-Under-The-Curve or "AUC" calculation below will help guide your understanding of the ROC curve
+
+```{r auc, message = FALSE, warning = FALSE}
+auc(testProbs$Outcome, testProbs$Probs)
+```
+
+```{r roc_curve, warning = FALSE, message = FALSE}
+ggplot(testProbs, aes(d = as.numeric(Outcome), m = Probs)) +
+  geom_roc(n.cuts = 50, labels = FALSE, colour = "#FE9900") +
+  style_roc(theme = theme_grey) +
+  geom_abline(slope = 1, intercept = 0, size = 1.5, color = 'grey') +
+  labs(title = "ROC Curve - clickModel") +
+      theme_minimal() + theme(legend.position = "none")
+```
+
+## Discussion 5
+
+Try to come up with an explanation of what this ROC curve is "saying" in 1-2 sentences.
+
+Is it useful? Is it overfit? What does the y=x line represent?
+
+# Cross validation
+
+We run 100-fold cross validation and look at the ROC (aka AUC), Sensitivity and Specificity across this series of predicitons. How do they look?
+
+Probably pretty, pretty good.
+
+```{r cv}
+ctrl <- trainControl(method = "cv", number = 100, classProbs=TRUE, summaryFunction=twoClassSummary)
+
+cvFit <- train(recidivism_within_3years ~ .,
+                  data=Recidivism %>% 
+                  dplyr::select(recidivism_within_3years, Recidivism_numeric,jobs_per_year,percent_days_employed, supervision_risk_score_first, prison_years, gang_affiliated, prior_arrest_episodes_felony, prior_arrest_episodes_misd,prior_arrest_episodes_violent, prior_arrest_episodes_property, prior_arrest_episodes_drug, avg_days_per_drugtest,drugtests_thc_positive,drugtests_cocaine_positive,drugtests_meth_positive,drugtests_other_positive,gender,race, age_at_release, residence_puma,education_level, dependents, prison_offense), 
+                method="glm", family="binomial",
+                metric="ROC", trControl = ctrl)
+
+cvFit
+```
+
+```{r goodness_metrics, message = FALSE, warning = FALSE}
+dplyr::select(cvFit$resample, -Resample) %>%
+  gather(metric, value) %>%
+  left_join(gather(cvFit$results[2:4], metric, mean)) %>%
+  ggplot(aes(value)) + 
+    geom_histogram(bins=35, fill = "#FF006A") +
+    facet_wrap(~metric) +
+    geom_vline(aes(xintercept = mean), colour = "#981FAC", linetype = 3, size = 1.5) +
+    scale_x_continuous(limits = c(0, 1)) +
+    labs(x="Goodness of Fit", y="Count", title="CV Goodness of Fit Metrics",
+         subtitle = "Across-fold mean reprented as dotted lines") +
+      theme_minimal() + theme(legend.position = "none")
+
+```
+
+# Cost-Benefit Calculation
+
+This has all been building to an examination of the model in the context of our ad campaign. Let's set this up to estimate the revenues associated with using this model under the following scenario:
+
+-An impression (serving an ad) costs \$0.10
+
+-A click brings an estimated \$0.35 of revenue per visitor on average.
+
+## Discussion 6
+
+Run the code below and look at the revenues associated with each prediction type. (Notice our `Revenue` calculation - for your assignment this will more closely resemble the calculation in the text book).
+
+**What is the rate of return per dollar spent?**
+
+A clue to figuring this out - we only spend money for impressions on True Positives and False Positives, and we lost money with our False Negatives - hypothetically we spend nothing on True Negatives.
+
+**Are there particular types of error which are more damaging? What outcomes do we want to maximize or minimize? Why do we look at False Negatives as a negative cost?**
+
+
+
+States spent an average of $45771 per prisoner for the year.
+https://usafacts.org/articles/how-much-do-states-spend-on-prisons/
+
+https://csgjusticecenter.org/publications/the-cost-of-recidivism/
+8000000000/193000 = 41450.78
+```{r cost_benefit}
+cost_benefit_table <-
+   testProbs %>%
+      count(predOutcome, Outcome) %>%
+      summarize(True_Negative = sum(n[predOutcome==0 & Outcome==0]),
+                True_Positive = sum(n[predOutcome==1 & Outcome==1]),
+                False_Negative = sum(n[predOutcome==0 & Outcome==1]),
+                False_Positive = sum(n[predOutcome==1 & Outcome==0])) %>%
+       gather(Variable, Count) %>%
+       mutate(Revenue =
+               ifelse(Variable == "True_Negative", Count * 0,
+               ifelse(Variable == "True_Positive",((45771) * Count),
+               ifelse(Variable == "False_Negative", (41450.78) * Count,
+               ifelse(Variable == "False_Positive", (-45771) * Count, 0))))) %>%
+    bind_cols(data.frame(Description = c(
+              "We correctly predicted no recidivism",
+              "We correctly predicted recidivism",
+              "We predicted no recidivism but get recidivism",
+              "We predicted recidivism but get no recidivism")))
+
+kable(cost_benefit_table,
+       caption = "Cost/Benefit Table") %>% kable_styling()
+```
+
+# Optimize Thresholds
+
+The last step to tuning our model is to run it for each threshold value. Recall that we chose 0.5 as the line above which a prediction is classified as a "click". We can then look at the confusion matrices for each threshold and choose the one that returns the most revenue.
+
+The code below bakes in our cost-revenue calculations.
+
+## Discussion 7
+
+**Consider how revenues compare to a situation in which we had no model (e.g. served adds to all 1000 in the sample) or one in which we don't tune the threshold.**
+
+```{r iterate_threshold}
+iterateThresholds <- function(data) {
+  x = .01
+  all_prediction <- data.frame()
+  while (x <= 1) {
+  
+  this_prediction <-
+      testProbs %>%
+      mutate(predOutcome = ifelse(Probs > x, 1, 0)) %>%
+      count(predOutcome, Outcome) %>%
+      summarize(True_Negative = sum(n[predOutcome==0 & Outcome==0]),
+                True_Positive = sum(n[predOutcome==1 & Outcome==1]),
+                False_Negative = sum(n[predOutcome==0 & Outcome==1]),
+                False_Positive = sum(n[predOutcome==1 & Outcome==0])) %>%
+     gather(Variable, Count) %>%
+     mutate(Revenue =
+               ifelse(Variable == "True_Negative", Count * 0,
+               ifelse(Variable == "True_Positive",((.35 - .1) * Count),
+               ifelse(Variable == "False_Negative", (-0.35) * Count,
+               ifelse(Variable == "False_Positive", (-0.1) * Count, 0)))),
+            Threshold = x)
+  
+  all_prediction <- rbind(all_prediction, this_prediction)
+  x <- x + .01
+  }
+return(all_prediction)
+}
+```
+
+```{r revenue_model}
+whichThreshold <- iterateThresholds(testProbs2)
+
+whichThreshold_revenue <- 
+whichThreshold %>% 
+    group_by(Threshold) %>% 
+    summarize(Revenue = sum(Revenue))
+
+  ggplot(whichThreshold_revenue)+
+  geom_line(aes(x = Threshold, y = Revenue))+
+  geom_vline(xintercept =  pull(arrange(whichThreshold_revenue, -Revenue)[1,1]))+
+    labs(title = "Model Revenues By Threshold For Test Sample",
+         subtitle = "Vertical Line Denotes Optimal Threshold") +
+      theme_minimal()
+
+```
+
+
+
