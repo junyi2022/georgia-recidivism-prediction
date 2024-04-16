@@ -215,7 +215,7 @@ cm <- caret::confusionMatrix(testProbs$predOutcome, testProbs$Outcome,
 
 print(cm)
 
-mosaicplot(cm$table, color=c("red","blue"), main = "Mosaic Plot for Original Confusion Matrix",
+mosaicplot(cm$table, color=c("#FF006A","#FE9900"), main = "Mosaic Plot for Original Confusion Matrix",
            xlab = "Prediction", ylab = "Reference")
 
 
@@ -249,7 +249,7 @@ auc(testProbs$Outcome, testProbs$Probs)
 
 ```{r roc_curve, warning = FALSE, message = FALSE}
 ggplot(testProbs, aes(d = as.numeric(Outcome), m = Probs)) +
-  geom_roc(n.cuts = 50, labels = FALSE, colour = "#FE9900") +
+  geom_roc(n.cuts = 50, labels = FALSE, colour = "#FF006A") +
   style_roc(theme = theme_grey) +
   geom_abline(slope = 1, intercept = 0, size = 1.5, color = 'grey') +
   labs(title = "ROC Curve - clickModel") +
@@ -287,7 +287,7 @@ dplyr::select(cvFit$resample, -Resample) %>%
   ggplot(aes(value)) + 
     geom_histogram(bins=35, fill = "#FF006A") +
     facet_wrap(~metric) +
-    geom_vline(aes(xintercept = mean), colour = "#981FAC", linetype = 3, size = 1.5) +
+    geom_vline(aes(xintercept = mean), colour = "#981FAC", linetype = 2, size = 0.9) +
     scale_x_continuous(limits = c(0, 1)) +
     labs(x="Goodness of Fit", y="Count", title="CV Goodness of Fit Metrics",
          subtitle = "Across-fold mean reprented as dotted lines") +
