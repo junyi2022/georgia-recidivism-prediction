@@ -135,7 +135,7 @@ RecidivismTest  <- Recidivism[-trainIndex,]
 
 RecidivismModel <- glm(Recidivism_numeric ~ .,
                   data=RecidivismTrain %>% 
-                    dplyr::select(Recidivism_numeric,jobs_per_year,percent_days_employed, supervision_risk_score_first, prison_years, gang_affiliated, prior_arrest_episodes_felony, prior_arrest_episodes_misd,prior_arrest_episodes_violent, prior_arrest_episodes_property, prior_arrest_episodes_drug, avg_days_per_drugtest,drugtests_thc_positive,drugtests_cocaine_positive,drugtests_meth_positive,drugtests_other_positive,gender,race, age_at_release, residence_puma,education_level, dependents, prison_offense),
+                    dplyr::select(Recidivism_numeric,jobs_per_year,percent_days_employed, supervision_risk_score_first, prison_years, condition_cog_ed,condition_mh_sa, condition_other, gang_affiliated,prior_arrest_episodes_violent, prior_arrest_episodes_property, violations, violations_instruction, violations_failtoreport, violations_1, delinquency_reports,program_attendances, program_unexcusedabsences, residence_changes,  prior_arrest_episodes_drug,prior_arrest_episodes,prior_revocations_parole,prior_revocations_probation, avg_days_per_drugtest,drugtests_thc_positive,drugtests_cocaine_positive,drugtests_meth_positive,drugtests_other_positive,gender,race, age_at_release, residence_puma,education_level, dependents, prison_offense),
                   family="binomial" (link="logit"))
 
 Recidivism_sum <- summary(RecidivismModel)
@@ -161,6 +161,9 @@ coefficients_table %>%
 pR2(RecidivismModel)
 
 ```
+G2: 2518.4173107
+MacF: 0.1897039
+R2: 0.1897039
 
 # Make Predictions
 
@@ -210,12 +213,18 @@ testProbs <-
 cm <- caret::confusionMatrix(testProbs$predOutcome, testProbs$Outcome, 
                        positive = "1")
 
+print(cm)
+
 mosaicplot(cm$table, color=c("red","blue"), main = "Mosaic Plot for Original Confusion Matrix",
            xlab = "Prediction", ylab = "Reference")
 
 
 ```
 
+Accuracy:0.7115
+        0.7103 (more variable)
+Sensitivity : 0.7872  (0.7845)             
+Specificity : 0.6087  (0.6094)
 
 ## Discussion 4
 
@@ -236,6 +245,7 @@ The ROC curve, gives us another visual "goodness of fit" metric. One that is a b
 ```{r auc, message = FALSE, warning = FALSE}
 auc(testProbs$Outcome, testProbs$Probs)
 ```
+0.772 (0.7747)
 
 ```{r roc_curve, warning = FALSE, message = FALSE}
 ggplot(testProbs, aes(d = as.numeric(Outcome), m = Probs)) +
@@ -263,7 +273,7 @@ ctrl <- trainControl(method = "cv", number = 100, classProbs=TRUE, summaryFuncti
 
 cvFit <- train(recidivism_within_3years ~ .,
                   data=Recidivism %>% 
-                  dplyr::select(recidivism_within_3years, Recidivism_numeric,jobs_per_year,percent_days_employed, supervision_risk_score_first, prison_years, gang_affiliated, prior_arrest_episodes_felony, prior_arrest_episodes_misd,prior_arrest_episodes_violent, prior_arrest_episodes_property, prior_arrest_episodes_drug, avg_days_per_drugtest,drugtests_thc_positive,drugtests_cocaine_positive,drugtests_meth_positive,drugtests_other_positive,gender,race, age_at_release, residence_puma,education_level, dependents, prison_offense), 
+                  dplyr::select(recidivism_within_3years,jobs_per_year,percent_days_employed, supervision_risk_score_first, prison_years, condition_cog_ed,condition_mh_sa, condition_other, gang_affiliated,prior_arrest_episodes_violent, prior_arrest_episodes_property, violations, violations_instruction, violations_failtoreport, violations_1, delinquency_reports,program_attendances, program_unexcusedabsences, residence_changes,  prior_arrest_episodes_drug,prior_arrest_episodes,prior_revocations_parole,prior_revocations_probation, avg_days_per_drugtest,drugtests_thc_positive,drugtests_cocaine_positive,drugtests_meth_positive,drugtests_other_positive,gender,race, age_at_release, residence_puma,education_level, dependents, prison_offense), 
                 method="glm", family="binomial",
                 metric="ROC", trControl = ctrl)
 
