@@ -156,14 +156,30 @@ coefficients_table %>%
   footnote(general_title = "\n", general = "Table x")
 ```
 
+
+1.*gang affiliated*
+Gang affiliation significantly increases the risk of reoffending.
+
+2.*prison years*
+Serving a prison sentence of more than 2 to 3 years is associated with a reduced risk of recidivism, while sentences of less than one year may lead to a higher risk.
+
+3.*employment*
+individuals who have more jobs in a year are more likely to engage in recidivism, possibly due to instability or low job quality.individuals who are employed for a higher percentage of days are less likely to engage in recidivism, implying that stable employment may be a protective factor against recidivism.
+
+4.*programs*
+high attendance in rehabilitation or support programs may be positively correlated with lower recidivism rates, as it could indicate an individual's commitment to rehabilitation. Unexcused absences might be negatively correlated with successful rehabilitation, potentially indicating a lack of engagement with the program, which could be a risk factor for re-offending.
+
+5.*drug*
+Positive drug tests, especially for THC and methamphetamine, are associated with an increased likelihood of recidivism.It could reflect the severity of drug habits or other social and economic factors tied to drug use that influence the likelihood of re-engagement in criminal behavior. 
+
+
+
 ```{r fit_metrics}
 
 pR2(RecidivismModel)
 
 ```
-G2: 2518.4173107
-MacF: 0.1897039
-R2: 0.1897039
+McFadden's pseudo-R-squared of approximately 0.1897, or 18.97%, indicates that the model explains a moderate proportion of the variance in recidivism. This value suggests that while the model has some explanatory power, there are other factors not included in the model that also affect the likelihood of recidivism.
 
 # Make Predictions
 
@@ -197,6 +213,9 @@ ggplot(testProbs, aes(x = Probs, fill = as.factor(Outcome))) +
       theme_minimal() + theme(legend.position = "none")
 ```
 
+this chart shows a promising degree of discriminating power in the model, as evidenced by the presence of peaks suggesting a concentration of true positives (red area towards the right) and true negatives (purple area towards the left). Although there is some overlap between the predicted probabilities for the two classes, which suggests areas where the model's predictions are less certain, the separation between the peaks indicates the model is capturing a meaningful difference between the outcomes. 
+
+
 # Confusion Matrix
 
 Each threshold (e.g. a probability above which a prediction is a "click" and below which it's a "no click") has it's own rate of error. These errors can be classified in four ways for a binary model.
@@ -215,16 +234,18 @@ cm <- caret::confusionMatrix(testProbs$predOutcome, testProbs$Outcome,
 
 print(cm)
 
+
 mosaicplot(cm$table, color=c("#FF006A","#FE9900"), main = "Mosaic Plot for Original Confusion Matrix",
            xlab = "Prediction", ylab = "Reference")
 
 
 ```
 
-Accuracy:0.7115
-        0.7103 (more variable)
-Sensitivity : 0.7872  (0.7845)             
-Specificity : 0.6087  (0.6094)
+The model correctly predicts the outcome 71.03% of the time and We can be 95% confident that the true accuracy of the model is between 70.12% and 71.93%. p value and kappa value also suggest that accuracy of the model is better than what would be achieved by always predicting the most frequent class.
+
+Sensitivity measures the proportion of actual positive cases (recidivism) that the model correctly identifies. A sensitivity of 0.7845, or 78.45%, means that out of all the individuals who did recidivist, the model correctly identified approximately 78.45% of them. This is a fairly high rate, indicating the model's strength in capturing those at risk of recidivism. Specificity measures the proportion of actual negative cases (non-recidivism) that the model correctly identifies. A specificity of 0.6094, or 60.94%, indicates that out of all the individuals who did not recidivist, the model correctly identified about 60.94% of them as not being at risk. The specificity is lower than the sensitivity, which suggests that the model is somewhat less adept at correctly identifying those who will not recidivist.
+
+In conclusion, the model is effective at identifying individuals who will recidivate but could benefit from improvements in accurately identifying those who will not. 
 
 ## Discussion 4
 
@@ -245,7 +266,7 @@ The ROC curve, gives us another visual "goodness of fit" metric. One that is a b
 ```{r auc, message = FALSE, warning = FALSE}
 auc(testProbs$Outcome, testProbs$Probs)
 ```
-0.772 (0.7747)
+An AUC of 0.7747 means that there is a 77.47% chance that the model will be able to distinguish between a randomly chosen positive instance (one that actually did recidivate) and a negative instance (one that did not recidivate).
 
 ```{r roc_curve, warning = FALSE, message = FALSE}
 ggplot(testProbs, aes(d = as.numeric(Outcome), m = Probs)) +
@@ -255,6 +276,8 @@ ggplot(testProbs, aes(d = as.numeric(Outcome), m = Probs)) +
   labs(title = "ROC Curve - clickModel") +
       theme_minimal() + theme(legend.position = "none")
 ```
+
+The curve rises steeply towards the upper-left corner of the plot, which shows that the model has a strong true positive rate before accruing false positives.
 
 ## Discussion 5
 
@@ -280,12 +303,18 @@ cvFit <- train(recidivism_within_3years ~ .,
 cvFit
 ```
 
+The Area Under the Curve (AUC) from the cross-validated model is 0.7751, which is slightly higher than the previously mentioned AUC of 0.7747. This suggests that the model's ability to discriminate between the positive and negative classes is consistent and robust across different subsets of the data.
+
+The cross-validated sensitivity is lower than the previously mentioned sensitivity of 0.7845. This indicates that, across various folds, the model's ability to correctly identify true positives (actual cases of recidivism) is somewhat less than what was observed in the initial result. The specificity is higher than the initially mentioned specificity of 0.6094. This implies that the model has a better ability to correctly identify true negatives (actual cases of non-recidivism) when evaluated under the cross-validation process.
+
+Comparatively, the cross-validated results provide a more reliable estimate of the model's performance since cross-validation reduces bias from any potential overfitting to a single test set. The differences in the cross-validated sensitivity and specificity compared to the initial results suggest that the model may be more conservative in predicting positive cases (recidivism) but is quite robust in correctly identifying negative cases (non-recidivism) across different subsamples of the dataset.
+
 ```{r goodness_metrics, message = FALSE, warning = FALSE}
 dplyr::select(cvFit$resample, -Resample) %>%
   gather(metric, value) %>%
   left_join(gather(cvFit$results[2:4], metric, mean)) %>%
   ggplot(aes(value)) + 
-    geom_histogram(bins=35, fill = "#FF006A") +
+    geom_histogram(bins=35, fill = "#FF006A", alpha=0.6) +
     facet_wrap(~metric) +
     geom_vline(aes(xintercept = mean), colour = "#981FAC", linetype = 2, size = 0.9) +
     scale_x_continuous(limits = c(0, 1)) +
