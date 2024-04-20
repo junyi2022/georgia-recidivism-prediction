@@ -192,7 +192,9 @@ Run the code below and explore using `glimpse(testProbs)` to see what these pred
 ```{r testProbs}
 
 testProbs <- data.frame(Outcome = as.factor(RecidivismTest$Recidivism_numeric),
-                        Probs = predict(RecidivismModel, RecidivismTest, type= "response"))
+                        Probs = predict(RecidivismModel, RecidivismTest, type= "response"),
+                        gender = RecidivismTest$gender,
+                        race = RecidivismTest$race)
 
 head(testProbs)
 ```
@@ -222,10 +224,20 @@ Each threshold (e.g. a probability above which a prediction is a "click" and bel
 
 A "confusion matrix" for the threshold of 50% shows us the rate at which we got True Positives (aka Sensitivity), False Positives, True Negatives (aka Specificity) and False Negatives for that threshold.
 
-```{r thresholds}
+```{r }
 testProbs <- 
   testProbs %>%
-  mutate(predOutcome  = as.factor(ifelse(testProbs$Probs > 0.5 , 1, 0)))
+  mutate(predOutcome  = as.factor(ifelse(testProbs$Probs > 0.5 , 1, 0)),
+         error = ifelse(testProbs$predOutcome == testProbs$Outcome, 0, 1)) 
+race_difference <- testProbs %>% 
+  group_by(race, gender) %>%
+  summarize(total_error = sum(error),
+            total_people = n()) %>%
+  mutate(percent_error = total_error / total_people) 
+race_difference %>% 
+  kable(align = "r") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))  %>%
+  footnote(general_title = "\n", general = "Table x")
 ```
 
 ```{r confusion_matrix}
