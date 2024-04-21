@@ -372,8 +372,8 @@ cost_benefit_table <-
        gather(Variable, Count) %>%
        mutate(Revenue =
                ifelse(Variable == "True_Negative", Count * 0,
-               ifelse(Variable == "True_Positive",((45771) * Count),
-               ifelse(Variable == "False_Negative", (41450.78) * Count,
+               ifelse(Variable == "True_Positive",((-45771) * Count),
+               ifelse(Variable == "False_Negative", (-41450.78) * Count,
                ifelse(Variable == "False_Positive", (-45771) * Count, 0))))) %>%
     bind_cols(data.frame(Description = c(
               "We correctly predicted no recidivism",
@@ -412,9 +412,9 @@ iterateThresholds <- function(data) {
      gather(Variable, Count) %>%
      mutate(Revenue =
                ifelse(Variable == "True_Negative", Count * 0,
-               ifelse(Variable == "True_Positive",((.35 - .1) * Count),
-               ifelse(Variable == "False_Negative", (-0.35) * Count,
-               ifelse(Variable == "False_Positive", (-0.1) * Count, 0)))),
+               ifelse(Variable == "True_Positive",((-45771) * Count),
+               ifelse(Variable == "False_Negative", (-41450.78) * Count,
+               ifelse(Variable == "False_Positive", (-45771) * Count, 0)))),
             Threshold = x)
   
   all_prediction <- rbind(all_prediction, this_prediction)
